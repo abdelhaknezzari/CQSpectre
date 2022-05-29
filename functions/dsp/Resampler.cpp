@@ -356,6 +356,8 @@ Resampler::process(const double *src, double *dst, int n)
     return outidx;
 }
 
+
+
 vector<double>
 Resampler::process(const double *src, int n)
 {
@@ -366,6 +368,7 @@ Resampler::process(const double *src, int n)
     if (got < maxout) out.resize(got);
     return out;
 }
+
 
 vector<double>
 Resampler::resample(int sourceRate, int targetRate, const double *data, int n)

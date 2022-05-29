@@ -33,6 +33,11 @@
 #define RESAMPLER_H
 
 #include <vector>
+#include <Rcpp.h>
+using namespace Rcpp;
+using namespace std;
+
+
 
 /**
  * Resampler resamples a stream from one integer sample rate to
@@ -75,7 +80,8 @@ public:
      * Read n input samples from src and return resampled data by
      * value.
      */
-    std::vector<double> process(const double *src, int n);
+    vector<double> process(const double *src, int n);
+
 
     /**
      * Return the number of samples of latency at the output due by

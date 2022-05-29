@@ -35,6 +35,11 @@
 #include "CQBase.h"
 #include "CQParameters.h"
 #include "CQKernel.h"
+#include <Rcpp.h>
+
+using namespace Rcpp;
+
+using namespace std;
 
 class Resampler;
 class FFTReal;
@@ -94,14 +99,14 @@ public:
      * and every bin contains a value, use \ref CQSpectrogram instead
      * of ConstantQ.
      */
-    ComplexBlock process(const RealSequence &);
+    vector<vector<complex<double>>> process(const vector<double> &);
 
     /**
      * Return the remaining constant-Q columns following the end of
      * processing. Any buffered input is padded so as to ensure that
      * all input provided to process() will have been returned.
      */
-    ComplexBlock getRemainingOutput();
+    vector<vector<complex<double>>> getRemainingOutput();
 
 private:
     const CQParameters m_inparams;
@@ -115,15 +120,15 @@ private:
     CQKernel::Properties m_p;
     int m_bigBlockSize;
 
-    std::vector<Resampler *> m_decimators;
-    std::vector<RealSequence> m_buffers;
+    vector<Resampler *> m_decimators;
+    vector<vector<double>> m_buffers;
 
     int m_outputLatency;
 
     FFTReal *m_fft;
 
     void initialise();
-    ComplexBlock processOctaveBlock(int octave);
+    vector<vector<complex<double>>> processOctaveBlock(int octave);
 
     // Not provided
     ConstantQ(const ConstantQ &);

@@ -263,8 +263,8 @@ ConstantQ::initialise()
     m_fft = new FFTReal(m_p.fftSize);
 }
 
-ConstantQ::ComplexBlock
-ConstantQ::process(const RealSequence &td)
+vector<vector<complex<double>>>
+ConstantQ::process(const vector<double> &td)
 {
     m_buffers[0].insert(m_buffers[0].end(), td.begin(), td.end());
 
@@ -273,27 +273,27 @@ ConstantQ::process(const RealSequence &td)
         m_buffers[i].insert(m_buffers[i].end(), dec.begin(), dec.end());
     }
 
-    ComplexBlock out;
+    vector<vector<complex<double>>> out;
 
     while (true) {
 
-	// We could have quite different remaining sample counts in
-	// different octaves, because (apart from the predictable
-	// added counts for decimator output on each block) we also
-	// have variable additional latency per octave
-	bool enough = true;
-	for (int i = 0; i < m_octaves; ++i) {
-	    int required = m_p.fftSize * pow(2, m_octaves - i - 1);
-	    if ((int)m_buffers[i].size() < required) {
-		enough = false;
-	    }
-	}
-	if (!enough) break;
+        // We could have quite different remaining sample counts in
+        // different octaves, because (apart from the predictable
+        // added counts for decimator output on each block) we also
+        // have variable additional latency per octave
+        bool enough = true;
+        for (int i = 0; i < m_octaves; ++i) {
+            int required = m_p.fftSize * pow(2, m_octaves - i - 1);
+            if ((int)m_buffers[i].size() < required) {
+                  enough = false;
+            }
+        }
+        if (!enough) break;
 
         int base = out.size();
         int totalColumns = pow(2, m_octaves - 1) * m_p.atomsPerFrame;
         for (int i = 0; i < totalColumns; ++i) {
-            out.push_back(ComplexColumn());
+            out.push_back(vector<Complex>());
         }
 
         for (int octave = 0; octave < m_octaves; ++octave) {
@@ -301,22 +301,22 @@ ConstantQ::process(const RealSequence &td)
             int blocksThisOctave = pow(2, (m_octaves - octave - 1));
 
             for (int b = 0; b < blocksThisOctave; ++b) {
-                ComplexBlock block = processOctaveBlock(octave);
-                
+                vector<vector<complex<double>>> block = processOctaveBlock(octave);
+
                 for (int j = 0; j < m_p.atomsPerFrame; ++j) {
 
                     int target = base +
-			    (b * (totalColumns / blocksThisOctave) + 
-			     (j * ((totalColumns / blocksThisOctave) /
-				   m_p.atomsPerFrame)));
+                (b * (totalColumns / blocksThisOctave) +
+                 (j * ((totalColumns / blocksThisOctave) /
+                   m_p.atomsPerFrame)));
 
-                    while (int(out[target].size()) < 
+                    while (int(out[target].size()) <
                            m_p.binsPerOctave * (octave + 1)) {
                         out[target].push_back(Complex());
                     }
-                    
+
                     for (int i = 0; i < m_p.binsPerOctave; ++i) {
-                        out[target][m_p.binsPerOctave * octave + i] = 
+                        out[target][m_p.binsPerOctave * octave + i] =
                             block[j][m_p.binsPerOctave - i - 1];
                     }
                 }
@@ -327,35 +327,35 @@ ConstantQ::process(const RealSequence &td)
     return out;
 }
 
-ConstantQ::ComplexBlock
+vector<vector<complex<double>>>
 ConstantQ::getRemainingOutput()
 {
     // Same as padding added at start, though rounded up
     int pad = ceil(double(m_outputLatency) / m_bigBlockSize) * m_bigBlockSize;
-    RealSequence zeros(pad, 0.0);
+    vector<double> zeros(pad, 0.0);
     return process(zeros);
 }
 
-ConstantQ::ComplexBlock
+vector<vector<complex<double>>>
 ConstantQ::processOctaveBlock(int octave)
 {
-    RealSequence ro(m_p.fftSize, 0.0);
-    RealSequence io(m_p.fftSize, 0.0);
+    vector<double> ro(m_p.fftSize, 0.0);
+    vector<double> io(m_p.fftSize, 0.0);
 
     m_fft->forward(m_buffers[octave].data(), ro.data(), io.data());
 
     m_buffers[octave] = RealSequence(m_buffers[octave].begin() + m_p.fftHop,
                                      m_buffers[octave].end());
 
-    ComplexSequence cv(m_p.fftSize);
+    vector<complex<double>> cv(m_p.fftSize);
     for (int i = 0; i < m_p.fftSize; ++i) {
         cv[i] = Complex(ro[i], io[i]);
     }
 
-    ComplexSequence cqrowvec = m_kernel->processForward(cv);
+    vector<complex<double>> cqrowvec = m_kernel->processForward(cv);
 
     // Reform into a column matrix
-    ComplexBlock cqblock;
+    vector<vector<complex<double>>> cqblock;
     for (int j = 0; j < m_p.atomsPerFrame; ++j) {
         cqblock.push_back(ComplexColumn());
         for (int i = 0; i < m_p.binsPerOctave; ++i) {

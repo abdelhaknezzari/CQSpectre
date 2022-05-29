@@ -8,110 +8,95 @@
 #include <sys/time.h>
 #include <cstdlib>
 
+#include "dsp/Window.h"
+//#include "dsp/CQBase.h"
+
+#include <cmath>
+#include <vector>
+#include <iostream>
+#include <Rcpp/Benchmark/Timer.h>
+
+using std::vector;
+using std::cerr;
+using std::endl;
+#define BOOST_TEST_DYN_LINK
+#define BOOST_TEST_MAIN
+
+
+
+// Set up fs/2 = 50, frequency range 10 -> 40 i.e. 2 octaves, fixed
+// duration of 2 seconds
+static const double sampleRate = 100;
+static const double cqmin = 10;
+static const double cqmax = 40;
+static const double bpo = 4;
+static const int duration = sampleRate * 2;
+// Threshold below which to ignore a column completely
+static const double threshold = 0.08;
+typedef vector<vector<complex<double>>> ComplexBlock;
+
+
 // [[Rcpp::export]]
-void rcpp_rcout(NumericVector v){
-  // printing value of vector
-  Rcout << "The value of v : " << v << "\n";
-
-  // printing error message
-  Rcerr << "Error message\n";
-}
-
-
-int getFileSize(FILE* inFile)
+List testCQTime1(NumericVector signal, int sampleRate, bool isStereo, bool isPCM, int binsPerOctave = 12)
 {
-    int fileSize = 0;
-    fseek(inFile, 0, SEEK_END);
 
-    fileSize = ftell(inFile);
+    Timer timer;
+    timer.step("start");
 
-    fseek(inFile, 0, SEEK_SET);
-    return fileSize;
+//binsPerOctave ??
+//https://librosa.org/doc/latest/generated/librosa.cqt.html
+//https://dsp.stackexchange.com/questions/54883/how-can-i-calculate-the-number-of-bins-per-octave
+
+int maxFrequency = sampleRate / 3;
+int minFrequency = 100;
+
+CQParameters params(sampleRate, minFrequency, maxFrequency, binsPerOctave);
+ConstantQ cq(params);
+CQInverse cqi(params);
+
+
+  Rcerr << "max freq = " << cq.getMaxFrequency() << ", min freq = " << cq.getMinFrequency() << ", octaves = " << cq.getOctaves() << endl;
+
+    Rcerr << "octave boundaries: ";
+    for (int i = 0; i < cq.getOctaves(); ++i) {
+	  Rcerr << cq.getMaxFrequency() / pow(2, i) << " ";
+    }
+    Rcerr << endl;
+
+    int latency = cq.getLatency() + cqi.getLatency();
+    Rcerr << "forward latency = " << cq.getLatency() << ", inverse latency = "   << cqi.getLatency() << ", total = " << latency << endl;
+
+
+    timer.step("input preparation");
+      vector<double> cqin;
+      for(NumericVector::iterator i = signal.begin(); i != signal.end(); ++i) {
+          cqin.push_back(*i);
+      }
+
+     vector<double> buffer;
+
+    timer.step("CQ process");
+    ComplexBlock  cqout = cq.process(cqin);
+
+
+    timer.step("end");
+    Rcout << "The value of v : " << cqout.size() << "\n";
+    Rcout << "The value of v : " << cqout[0].size() << "\n";
+
+    NumericVector res(timer);
+    NumericVector timeDifference = diff(res);
+
+    for( NumericVector::iterator it = timeDifference.begin(); it != timeDifference.end() ; ++it) {
+       Rcout << "Run time = " << *it << endl;
+    }
+
+
+  return wrap(cqout);
 }
 
-
-
-// [[Rcpp::export]]
-void callSpectrum(){
-
-        typedef struct  WAV_HEADER
-        {
-            /* RIFF Chunk Descriptor */
-            uint8_t         RIFF[4];        // RIFF Header Magic header
-            uint32_t        ChunkSize;      // RIFF Chunk Size
-            uint8_t         WAVE[4];        // WAVE Header
-            /* "fmt" sub-chunk */
-            uint8_t         fmt[4];         // FMT header
-            uint32_t        Subchunk1Size;  // Size of the fmt chunk
-            uint16_t        AudioFormat;    // Audio format 1=PCM,6=mulaw,7=alaw,     257=IBM Mu-Law, 258=IBM A-Law, 259=ADPCM
-            uint16_t        NumOfChan;      // Number of channels 1=Mono 2=Sterio
-            uint32_t        SamplesPerSec;  // Sampling Frequency in Hz
-            uint32_t        bytesPerSec;    // bytes per second
-            uint16_t        blockAlign;     // 2=16-bit mono, 4=16-bit stereo
-            uint16_t        bitsPerSample;  // Number of bits per sample
-            /* "data" sub-chunk */
-            uint8_t         Subchunk2ID[4]; // "data"  string
-            uint32_t        Subchunk2Size;  // Sampled data length
-        } wav_hdr;
-
-
-
-         const char *fileName = "dsp/data/filtered-whitenoise-480-14600.wav";
-
-         wav_hdr wavHeader;
-         int headerSize = sizeof(wav_hdr), filelength = 0;
-
-             FILE* wavFile = fopen(fileName, "r");
-            if (wavFile == nullptr)
-            {
-
-              Rcout << " file opened \n";
-
-            }
-
-
-
-                //Read the header
-                size_t bytesRead = fread(&wavHeader, 1, headerSize, wavFile);
-                Rcout << "Header Read " << bytesRead << " bytes." << endl;
-                if (bytesRead > 0)
-                {
-                    //Read the data
-                    uint16_t bytesPerSample = wavHeader.bitsPerSample / 8;      //Number     of bytes per sample
-                    uint64_t numSamples = wavHeader.ChunkSize / bytesPerSample; //How many samples are in the wav file?
-                    static const uint16_t BUFFER_SIZE = 4096;
-                    int8_t* buffer = new int8_t[BUFFER_SIZE];
-                    while ((bytesRead = fread(buffer, sizeof buffer[0], BUFFER_SIZE / (sizeof buffer[0]), wavFile)) > 0)
-                    {
-                        /** DO SOMETHING WITH THE WAVE DATA HERE **/
-                        Rcout << "Read " << bytesRead << " bytes." << endl;
-                    }
-                    delete [] buffer;
-                    buffer = nullptr;
-                    filelength = getFileSize(wavFile);
-//
-                     Rcout << "File is                    :" << filelength << " bytes." << endl;
-                     Rcout << "RIFF header                :" << wavHeader.RIFF[0] << wavHeader.RIFF[1] << wavHeader.RIFF[2] << wavHeader.RIFF[3] << endl;
-                     Rcout << "WAVE header                :" << wavHeader.WAVE[0] << wavHeader.WAVE[1] << wavHeader.WAVE[2] << wavHeader.WAVE[3] << endl;
-                     Rcout << "FMT                        :" << wavHeader.fmt[0] << wavHeader.fmt[1] << wavHeader.fmt[2] << wavHeader.fmt[3] << endl;
-//                     Rcout << "Data size                  :" << wavHeader.ChunkSize << endl;
-//
-//
-                     Rcout << "Sampling Rate              :" << wavHeader.SamplesPerSec << endl;
-//                     Rcout << "Number of bits used        :" << wavHeader.bitsPerSample << endl;
-                     Rcout << "Number of channels         :" << wavHeader.NumOfChan << endl;
-                     Rcout << "Number of bytes per second :" << wavHeader.bytesPerSec << endl;
-                     Rcout << "Data length                :" << wavHeader.Subchunk2Size << endl;
-                     Rcout << "Audio Format               :" << wavHeader.AudioFormat << endl;
-//
-//
-//                     Rcout << "Block align                :" << wavHeader.blockAlign << endl;
-//                     Rcout << "Data string                :" << wavHeader.Subchunk2ID[0] << wavHeader.Subchunk2ID[1] << wavHeader.Subchunk2ID[2] << wavHeader.Subchunk2ID[3] << endl;
-//
-                 }
-
-            fclose(wavFile);
-}
+//"functions/dsp/data/filtered-whitenoise-480-14600.wav" %>%  tuneR::readWave() -> vv
+//testCQTime1( vv@left, vv@samp.rate, vv@stereo, vv@pcm, 12
+//http://arma.sourceforge.net/docs.html#for_each
 
 
 // [[Rcpp::export]]
@@ -160,5 +145,5 @@ int searchWordInText(std::string text, StringVector searchWords) {
 }
 
 //# library(Rcpp)
-//# sourceCpp("SDD/localCDMShinyDashBoard/functions/CPPFunctions.cpp")
+//# sourceCpp("functions/CPPFunctions.cpp")
 
